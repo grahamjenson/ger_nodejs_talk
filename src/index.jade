@@ -1,0 +1,191 @@
+doctype html
+html
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1, maximum-scale=1')
+    title Streaming into PostGres
+
+    link(rel='stylesheet', type='text/css', href='build/build.css')
+
+  body
+
+    article
+
+      section
+        h1 Node.js Streaming into PostGreSQL
+
+      section
+        h2 Good Enough Recommendations
+        h3 Recommendations Engine
+          pre
+            code.language-javascript.
+              ger.event(person, action, thing)
+              ger.event('bob', 'views', 'product')
+
+      section
+        img(src="images/gir.jpg")
+
+      section
+        h2 Populating GER's Database
+        h3 PostGreSQL
+        ul
+          li Each Insert is Expensive, but
+          li 
+            pre
+              code COPY
+          li takes a file or STD IN as CSV and inserts each row
+        br
+       
+      section
+        h2
+         pre
+          code pg-copy-streams
+        p takes a stream and pipes it into PostGres COPY 
+
+      section
+        h2 BootStrap
+        pre
+          code.language-javascript.
+            bootstrap: function(stream){
+              ...
+            }
+
+      section
+        h2 The Query
+        pre
+          code.language-javascript.
+            query = "COPY events (person, action, thing) FROM STDIN CSV"
+        p Takes a stream like
+        pre
+          code.language-javascript.
+            'bob', 'views','product1'
+            'alice', 'buys', 'product2'
+
+      section
+        h2 With the pg Connection
+        pre
+          code.language-javascript.
+            copyFrom = require('pg-copy-streams').from
+            copy = connection.query(copyFrom(query))
+            stream.pipe(copy)
+
+      section
+        h2 Why Not Return a Promise?
+        pre
+          code.language-javascript.
+            deferred = q.defer()      
+            stream.pipe(copy)
+            .on('end', function() { return deferred.resolve() } )
+            .on('error', function(err){ return deferred.reject(err)} )
+            return deferred.promise
+
+      section
+        h2 Why Not Do This Over HTTP
+        h3 Hapi, Hapi, Joy, Joy
+
+      section
+        h2 Hapi.js
+        pre
+          code.language-javascript.
+            Hapi = require('hapi')
+            server = new Hapi.Server('localhost', 8000)
+
+      section
+        h2 Hapi.js
+        h3 Configuration of the Route
+        pre
+          code.language-javascript.
+            server.route
+             method: 'POST',
+             path: 'event/bootstrap',
+             config:
+              payload:
+               maxBytes: 209715200
+               output:'stream'
+               parse: true
+
+      section
+        h2 Hapi.js
+        h3 Configuration of the Route
+        pre
+          code.language-javascript.
+            handler: function(request, reply) {
+              ger.bootstrap(request.payload["events"])
+              .then( function() { reply({finished: true}) } )
+              .fail( function(err) { reply({error: err}).code(500) })
+            }
+
+      section
+        h2 Testing with curl
+        pre
+          code.language-javascript.
+            curl -i -F events=@data.csv http://localhost:8000/event/bootstrap
+            head data.csv | curl -i -F events=@- http://localhost:8000/event/bootstrap
+
+      section
+        h2 Performance
+        br
+        ul
+          li 0.7297ms per event, when each event is inserted one at a time
+          li 0.0696ms per event, when events are bootstrapped
+
+
+      section
+        h2 More Reasons (CounterStream)
+        pre
+          code.language-javascript.
+            split = require 'split'
+            Transform = require('stream').Transform;
+
+            class CounterStream extends Transform
+             _transform: (chunk, encoding, done) ->
+              @count |= 0
+              if chunk.toString().trim() != ''
+               @count += 1
+              @push(chunk)
+              done()
+
+      section
+        h2 More Reasons (CounterStream)
+        pre
+          code.language-javascript.
+            counter = new CounterStream()
+            stream.pipe(split(/^/gm)).pipe(counter).pipe(pg_stream)
+            .on('end', -> deferred.resolve(counter.count))
+            
+      section
+        h2 More Reasons (CutStream)
+        pre
+          code.language-javascript.          
+            split = require 'split'
+            Transform = require('stream').Transform;
+            class CutStream extends Transform
+             cut_at: (@cut_at) ->
+
+             _transform: (chunk, encoding, done) ->
+              @count |= 0
+              if chunk.toString().trim() != ''
+               @count += 1
+              if @cut_at >= @count 
+               @push(chunk)
+              done()
+
+      section
+        h2 More Reasons (CutStream)
+        pre
+          code.language-javascript.  
+            cut_stream = new CutStream()
+            cut_stream.cut_at(limit)
+            ger.bootstrap(
+             stream.pipe(split(/^/gm))
+             .pipe(cut_stream)
+            )
+
+
+
+
+      section
+        h2 Graham Jenson
+        h3 @GrahamJenson
+
+    script(src='build/build.js')
