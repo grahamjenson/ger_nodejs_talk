@@ -12,180 +12,224 @@ html
     article
 
       section
-        h1 Node.js Streaming into PostGreSQL
+        h1 Scalable Architecture DR CoN
+        h2 Docker, Registrator, Consul, Consul Template and Nginx
 
       section
-        h2 Good Enough Recommendations
-        h3 Recommendations Engine
-          pre
-            code.language-javascript.
-              ger.event(person, action, thing)
-              ger.event('bob', 'views', 'product')
+        h2 Docker
+        img(src="images/docker.png")
+        
+      section
+        h2 Docker
+        p Docker is a nice API wrapper around Linux containers,
 
       section
-        img(src="images/gir.jpg")
+        h2 Installing Docker
+        pre.language-bash.
+          apt-get install docker
 
       section
-        h2 Populating GER's Database
-        h3 PostGreSQL
-        ul
-          li Each Insert is Expensive, but
-          li 
-            pre
-              code COPY
-          li takes a file or STD IN as CSV and inserts each row
-        br
-       
-      section
-        h2
-         pre
-          code pg-copy-streams
-        p takes a stream and pipes it into PostGres COPY 
+        h2 Installing Docker OSX
+        pre.language-bash.
+          brew install boot2docker
+          boot2docker init  
+          boot2docker up
+        h3 Setup
+        pre.language-bash.
+          export DOCKER_IP=`boot2docker ip`  
+          export DOCKER_HOST=`boot2docker socket` 
 
       section
-        h2 BootStrap
-        pre
-          code.language-javascript.
-            bootstrap: function(stream){
-              ...
-            }
+        h2 Testing Docker
+        pre.language-bash.
+          docker ps
 
       section
-        h2 The Query
-        pre
-          code.language-javascript.
-            query = "COPY events (person, action, thing) FROM STDIN CSV"
-        p Takes a stream like
-        pre
-          code.language-javascript.
-            'bob', 'views','product1'
-            'alice', 'buys', 'product2'
+        h2 Example Docker Service
+        pre.language-bash.
+          FROM  python:3  
+          EXPOSE  80  
+          CMD ["python", "-m", "http.server"]
 
       section
-        h2 With the pg Connection
-        pre
-          code.language-javascript.
-            copyFrom = require('pg-copy-streams').from
-            copy = connection.query(copyFrom(query))
-            stream.pipe(copy)
-
+        h2 Building Docker Service
+        pre.language-bash.
+          docker build -t python/server .
+      
       section
-        h2 Why Not Return a Promise?
-        pre
-          code.language-javascript.
-            deferred = q.defer()      
-            stream.pipe(copy)
-            .on('end', function() { return deferred.resolve() } )
-            .on('error', function(err){ return deferred.reject(err)} )
-            return deferred.promise
-
+        h2 Running Docker Service
+        pre.language-bash.
+          docker run -i -t -p 8000:80 python/server
+      
       section
-        h2 Why Not Do This Over HTTP
-        h3 Hapi, Hapi, Joy, Joy
+        h2 Testing Docker Service
+        pre.language-bash.
+          curl $DOCKER_IP:8000
 
-      section
-        h2 Hapi.js
-        pre
-          code.language-javascript.
-            Hapi = require('hapi')
-            server = new Hapi.Server('localhost', 8000)
-
-      section
-        h2 Hapi.js
-        h3 Configuration of the Route
-        pre
-          code.language-javascript.
-            server.route
-             method: 'POST',
-             path: 'event/bootstrap',
-             config:
-              payload:
-               maxBytes: 209715200
-               output:'stream'
-               parse: true
-
-      section
-        h2 Hapi.js
-        h3 Configuration of the Route
-        pre
-          code.language-javascript.
-            handler: function(request, reply) {
-              ger.bootstrap(request.payload["events"])
-              .then( function() { reply({finished: true}) } )
-              .fail( function(err) { reply({error: err}).code(500) })
-            }
-
-      section
-        h2 Testing with curl
-        pre
-          code.language-javascript.
-            curl -i -F events=@data.csv http://localhost:8000/event/bootstrap
-            head data.csv | curl -i -F events=@- http://localhost:8000/event/bootstrap
-
-      section
-        h2 Performance
-        br
-        ul
-          li 0.7297ms per event, when each event is inserted one at a time
-          li 0.0696ms per event, when events are bootstrapped
 
 
       section
-        h2 More Reasons (CounterStream)
-        pre
-          code.language-javascript.
-            split = require 'split'
-            Transform = require('stream').Transform;
-
-            class CounterStream extends Transform
-             _transform: (chunk, encoding, done) ->
-              @count |= 0
-              if chunk.toString().trim() != ''
-               @count += 1
-              @push(chunk)
-              done()
+        h2 Consul
+        img(src="images/consul.png")
 
       section
-        h2 More Reasons (CounterStream)
-        pre
-          code.language-javascript.
-            counter = new CounterStream()
-            stream.pipe(split(/^/gm)).pipe(counter).pipe(pg_stream)
-            .on('end', -> deferred.resolve(counter.count))
-            
-      section
-        h2 More Reasons (CutStream)
-        pre
-          code.language-javascript.          
-            split = require 'split'
-            Transform = require('stream').Transform;
-            class CutStream extends Transform
-             cut_at: (@cut_at) ->
+        h2 Consul
+        p is a service that has a DNS and HTTP api. It can also health check services, cluster across multiple machines and is as a key-value store.
 
-             _transform: (chunk, encoding, done) ->
-              @count |= 0
-              if chunk.toString().trim() != ''
-               @count += 1
-              if @cut_at >= @count 
-               @push(chunk)
-              done()
 
       section
-        h2 More Reasons (CutStream)
-        pre
-          code.language-javascript.  
-            cut_stream = new CutStream()
-            cut_stream.cut_at(limit)
-            ger.bootstrap(
-             stream.pipe(split(/^/gm))
-             .pipe(cut_stream)
-            )
+        h2 Running Consul
+        pre.language-bash.
+          docker run -it -h node \
+           -p 8500:8500 \
+           -p 8600:53/udp \
+           progrium/consul \
+           -server \
+           -bootstrap \
+           -advertise $DOCKER_IP \
+           -log-level debug
 
+      section
+        h2 Testing Consul
+        p Web Service running at $DOCKER_IP:8500
 
+      section
+        h2 Testing Consul
+        pre.language-bash.
+          curl -XPUT \
+          $DOCKER_IP:8500/v1/agent/service/register \
+          -d '{
+           "ID": "simple_instance_1",
+           "Name":"simple",
+           "Port": 8000, 
+           "tags": ["tag"]
+          }'
 
+      section
+        h2 Testing Consul
+        pre.language-bash.
+          dig @$DOCKER_IP -p 8600 simple.service.consul
+
+      section
+        h2 Testing Consul with SRV
+        pre.language-bash.
+          dig @$DOCKER_IP -p 8600 SRV simple.service.consul
+        p Using SRV records can be pretty difficult, not many things support them
+
+      section
+        h2 Registrator
+        p takes environment variables defined when a Docker container is started and registers it with Consul.
+
+      section
+        h2 Running Registrator
+        pre.language-bash.
+          docker run -it \
+          -v /var/run/docker.sock:/tmp/docker.sock \
+          -h $DOCKER_IP progrium/registrator \
+          consul://$DOCKER_IP:8500
+
+      section
+        h2 Testing Registrator
+        pre.language-bash.
+          docker run -it \
+          -e "SERVICE_NAME=simple" \
+          -p 8000:80 python/server
+
+      section
+        h2 Consul Template
+        img(src="images/consul-template.png")
+      
+      section
+        h2 Consul Template
+        p uses Consul to update files and execute commands when it detects the services in Consul have changed
+
+      section
+        h2 DR CoN 
+        p Use Registrator to register services with Consul, Consul Template to rewrite an Nginx config, to load-balance across multiple services 
+
+      section
+        pre.language-bash.
+          FROM nginx:1.7
+
+          #Install Curl
+          RUN apt-get update -qq && apt-get -y install curl
+
+          #Link to Consul Template Binary
+          ENV CT_URL http://bit.ly/15uhv24
+
+          #Install Consul Template
+          RUN curl -L $CT_URL | \
+          tar -C /usr/local/bin --strip-components 1 -zxf -
+
+          #Setup Consul Template Files
+          RUN mkdir /etc/consul-templates
+          ENV CT_FILE /etc/consul-templates/nginx.conf
+
+          #Setup Nginx File
+          ENV NX_FILE /etc/nginx/conf.d/app.conf
+
+          #Default Variables
+          ENV CONSUL consul:8500
+          ENV SERVICE consul-8500
+
+          # Command will
+          # 1. Write Consul Template File
+          # 2. Start Nginx
+          # 3. Start Consul Template
+
+          CMD echo "upstream app {                 \n\
+            least_conn;                            \n\
+            {{range service \"$SERVICE\"}}         \n\
+            server  {{.Address}}:{{.Port}};        \n\
+            {{else}}server 127.0.0.1:65535;{{end}} \n\
+          }                                        \n\
+          server {                                 \n\
+            listen 80 default_server;              \n\
+            location / {                           \n\
+              proxy_pass http://app;               \n\
+            }                                      \n\
+          }" > $CT_FILE; \
+          /usr/sbin/nginx -c /etc/nginx/nginx.conf \
+          & CONSUL_TEMPLATE_LOG=debug consul-template \
+            -consul=$CONSUL \
+            -template "$CT_FILE:$NX_FILE:/usr/sbin/nginx -s reload";
+
+      section
+        h2 Building DR CoN 
+        pre.language-bash.
+          docker build -t drcon .
+
+      section
+        h2 Running DR CoN
+        pre.language-bash.
+          docker run -it \
+          -e "CONSUL=$DOCKER_IP:8500" \
+          -e "SERVICE=simple" \
+          -p 80:80 drcon
+
+      section
+        h2 Testing DR CoN
+        pre.language-bash.
+          docker run -it \
+          -e "SERVICE_NAME=simple" \
+          -p 8000:80 python/server
+        pre.language-bash.
+          curl $DOCKER_IP:80
+
+      section 
+        h2 More Testing of DR CoN
+        pre.language-bash.
+          while true; do curl $DOCKER_IP:80; sleep 1; done
+      
+      section
+        h2 Conclusion
+        h3 Docker is very fun
 
       section
         h2 Graham Jenson
         h3 @GrahamJenson
+        h3 https://github.com/grahamjenson
+        h3 http://maori.geek.nz
+        h3 Node.js Wellington
 
     script(src='build/build.js')
